@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import re
+
+############################################################
+### GLOBAL STRINGS
+############################################################ 
+OPTIONS     = "[OPTIONS]"
+SCRIPT      = "[SCRIPT]" 
+INPUTFILE   = "[INPUTFILE]"
+
+
+############################################################
+### SOME FUNCTIONS
+############################################################ 
+def _exit():
+    return sys.exit()
+
+
+def _invalid(messageType):
+    print("[Error:] %s" %(messageType))
+    return _exit()
+
+
+def clear_subString(_string, subString):
+    resultString = _string
+    resultString = resultString.replace(subString, "", 1)
+    return resultString
+ 
+
+############################################################
+### FILE CLASS
+############################################################ 
+class FILE(object):
+
+
+    def __init__(self):
+        self.path          = None
+        self.numebrOfLines = 0
+        self.lines         = []
+
+
+    def check_file(self):
+        if self.numebrOfLines == 0 or self.lines == []:
+            print(INPUTFILE + " is empty.")
+            return _exit()
+
+
+    def get_pipeInput(self, pipeInput):
+        self.lines = pipeInput
+        self.numebrOfLines = len(self.lines)
+
+        # check file
+        self.check_file()
+
+
+    def read_file(self, path):
+        self.path = path
+        
+        # Opening and reading file
+        tmp_file = open(self.path,"r") 
+    
+        self.lines = tmp_file.readlines()
+        self.numebrOfLines = len(self.lines)
+
+        # Closing file
+        tmp_file.close()
+
+        # check file
+        self.check_file()
+
+
+    def print_lines(self, start=None, end=None):
+        if start != None and end != None:
+            if start - 1 < 0:
+                for i in range(0, end):
+                    print(self.lines[i], end="")
+            else:
+                for i in range(start-1, end):
+                    print(self.lines[i], end="")            
+        else:
+            for line in self.lines:
+                print(line, end="") 
+
+
+    def save_file(self):
+        # Opening and reading file
+        tmp_file = open(self.path,"w") 
+              
+        # Writting lines 
+        for line in self.lines: 
+            tmp_file.writelines(line)
+
+        # Closing file
+        tmp_file.close()     
+
+
+############################################################
+### CSED CLASS
+############################################################ 
+class CSED(object):
+    
+
+    def __init__(self, first_Str, second_Str, third_Str, pipe_input=None):
+        self.OPTIONS     = None
+        self.SCRIPT      = None
+        self.FILE_PATH   = None
+        self.PIPE_INPUT  = None
+        self.FILE_INFO   = None
+
+        # example: {csed -n '5,10p' [INPUTFILE]} or {csed -i 's/old/new/[g/lineNumber]' [INPUTFILE]}
+        if first_Str != None and second_Str != None and third_Str != None and pipe_input == None:
+            self.OPTIONS    = first_Str
+            self.SCRIPT     = second_Str
+            self.FILE_PATH  = third_Str
+
+        # example: {csed 's/old/new/[g/lineNumber]' [INPUTFILE]}
+        elif first_Str != None and second_Str != None and third_Str == None and pipe_input == None:
+            self.SCRIPT     = first_Str
+            self.FILE_PATH  = second_Str
+
+        # example: {echo "string" | csed -n '5,10p'}
+        elif first_Str != None and second_Str != None and third_Str == None and pipe_input != None:
+            self.OPTIONS    = first_Str
+            self.SCRIPT     = second_Str
+            self.PIPE_INPUT = pipe_input
+        
+        # example: {echo "string" | csed 's/old/new/[g/lineNumber]'} 
+        elif first_Str != None and second_Str == None and third_Str == None and pipe_input != None:
+            self.SCRIPT     = first_Str
+            self.PIPE_INPUT = pipe_input
+
+        else:
+            _invalid("invalid Syntax \nusage: csed " + OPTIONS + " " + SCRIPT + " " + INPUTFILE)
+            
+
+        self.check_INPUTFILE()
+        self.check_OPTIONS()
+        
+
+    def check_INPUTFILE(self):
+        self.FILE_INFO = FILE()
+
+        if self.PIPE_INPUT != None or self.FILE_PATH != None:
+            if self.FILE_PATH != None and os.path.isfile(self.FILE_PATH) == True:
+                self.FILE_INFO.read_file(self.FILE_PATH)
+
+            elif self.PIPE_INPUT != None:
+                self.FILE_INFO.get_pipeInput(self.PIPE_INPUT)
+
+        else:
+            return _invalid("invalid " + INPUTFILE)
+        
+
+    def check_OPTIONS(self):
+        if self.OPTIONS == "-n":
+            start, end = self.printInputStream()
+            self.FILE_INFO.print_lines(start, end)
+        
+        elif self.OPTIONS == "-i" and self.FILE_PATH != None:
+            self.replacing()
+            self.FILE_INFO.save_file()
+
+        elif self.OPTIONS == None:
+            self.replacing()
+            self.FILE_INFO.print_lines()
+
+        else:
+            return _invalid("invalid " + OPTIONS)
+            
+         
+    def printInputStream(self):
+        tmp_script = self.SCRIPT
+        if tmp_script.count("p") != 1 or tmp_script.count(",") != 1:
+            return _invalid("invalid " + SCRIPT + " for printingInputStream method")
+
+        else:
+            num1 = ""
+            num2 = ""
+            
+            # getting num1
+            while tmp_script[0] != ",":
+                if tmp_script[0].isdigit():
+                    num1 += tmp_script[0]
+                    tmp_script = clear_subString(tmp_script, tmp_script[0])
+                else:
+                    return _invalid("invalid start LineNumber in " + SCRIPT + " for printingInputStream method")
+            
+
+            # check for , in SCRIPT
+            if tmp_script[0] == ",":
+                tmp_script = clear_subString(tmp_script, tmp_script[0])
+            else:
+                return _invalid("invalid " + SCRIPT + " for printingInputStream method")
+            
+
+            # getting num2
+            while tmp_script[0] != "p":
+                if tmp_script[0].isdigit():
+                    num2 += tmp_script[0]
+                    tmp_script = clear_subString(tmp_script, tmp_script[0])
+                else:
+                    return _invalid("invalid end LineNumber in " + SCRIPT + " for printingInputStream method")
+           
+
+            # check for p in SCRIPT
+            if tmp_script[0] == "p":
+                tmp_script = clear_subString(tmp_script, tmp_script[0])
+            else:
+                return _invalid("invalid " + SCRIPT + " for printingInputStream method")
+         
+
+            # check for end SCRIPT
+            if tmp_script:
+                return _invalid("invalid " + SCRIPT + " for printingInputStream method")
+
+        
+            # converting num1 to int
+            if num1 and num1.isdigit():
+                num1 = int(num1)
+            elif num1 == "":
+                num1 = 1
+            else:
+                return _invalid("invalid start LineNumber in " + SCRIPT + " for printingInputStream method")
+
+            # converting num2 to int
+            if num2 and num2.isdigit():
+                num2 = int(num2)
+            elif num2 == "":
+                num2 = self.FILE_INFO.numebrOfLines 
+            else:
+                return _invalid("invalid end LineNumber in " + SCRIPT + " for printingInputStream method.")
+
+            # final check
+            if num1 == 0 or num2 == 0:
+                return _invalid("start or end LineNumbers is equal to 0 in " + SCRIPT + " for printingInputStream method")
+
+            elif num1 > self.FILE_INFO.numebrOfLines or\
+                 num2 > self.FILE_INFO.numebrOfLines:
+                return _invalid("start or end LineNumbers is greater than \'numebrOfLines = " + str(self.FILE_INFO.numebrOfLines) +\
+                                 "\' in " + SCRIPT + " for printingInputStream method")
+            
+            elif num1 > num2:
+                return _invalid("startLineNumber is greater than endLineNumbers in " + SCRIPT + " for printingInputStream method")
+
+            return num1, num2
+            
+            
+    def replacing(self):
+        tmp_script = self.SCRIPT
+        
+        ## First checking
+        if tmp_script.count("/") < 3 or tmp_script[0:2] != "s/":
+            return _invalid("invalid " + SCRIPT + " for replacing method")
+        
+        ## Parsing SCRIPT 
+        else:
+            oldString = ""
+            newString = ""
+            globalSearch_flag = False 
+            lineNumber = ""
+            oFlag = False
+            nFlag = False
+            
+    
+            tmp_script = clear_subString(tmp_script, "s/")
+            while tmp_script:
+                
+                # check for delimiter character
+                if tmp_script[0] == "/" and (oFlag == False or nFlag == False):
+
+                    if oFlag == False:
+                        # append character to oldString
+                        if oldString != "" and oldString[len(oldString)-1] == "\\":
+                            oldString = oldString[0:len(oldString)-1] + "/"
+
+                        # finish oldString    
+                        elif tmp_script.count("/") >= 2:
+                            oFlag = True
+
+                        else:
+                            return _invalid("invalid " + SCRIPT + " for replacing method")
+
+                    elif nFlag == False:
+                        # append character to newString
+                        if newString != "" and newString[len(newString)-1] == "\\":
+                            newString = newString[0:len(newString)-1] + "/"
+                        
+                        # finish oldString   
+                        elif tmp_script.count("/") == 1:
+                            nFlag = True
+                        
+                        else:
+                            return _invalid("invalid " + SCRIPT + " for replacing method")
+
+                    else:
+                        return _invalid("invalid " + SCRIPT + " for replacing method")
+
+
+                # check for not-delimiter character
+                elif tmp_script[0] != "/" and (oFlag == False or nFlag == False):
+                    # append character to oldString
+                    if oFlag == False:
+                        oldString += tmp_script[0]
+
+                    # append rawString to newString   
+                    elif nFlag == False:
+                        newString += tmp_script[0]
+                    
+                    else:
+                        return _invalid("invalid " + SCRIPT + " for replacing method")
+                
+                # check for globalSearch_flag                    
+                elif tmp_script[0] == "g" and oFlag == True and nFlag == True and lineNumber == "":
+                    globalSearch_flag = True
+                
+                # check for lineNumber
+                elif tmp_script[0].isdigit() and oFlag == True and nFlag == True and globalSearch_flag == False:
+                    lineNumber += tmp_script[0] 
+    
+                else:
+                    return _invalid("invalid " + SCRIPT + " for replacing method")
+    
+                tmp_script = clear_subString(tmp_script, tmp_script[0])
+
+            
+            ## Final checking
+            if oldString == "" or newString == "" or oFlag == False or nFlag == False:
+                return _invalid("oldString or newString isn\'t exists for " + SCRIPT + " for replacing method")
+                
+            if lineNumber != "" :
+                if int(lineNumber) > self.FILE_INFO.numebrOfLines or  int(lineNumber) == 0:
+                    return _invalid("invalid lineNumber for " + SCRIPT + " for replacing method")
+                else:
+                    lineNumber = int(lineNumber)
+
+
+            ## Manipulating INPUTFILE
+            if lineNumber == "" :            
+                for i in range(self.FILE_INFO.numebrOfLines):
+
+                    # Part2: replace first match each line
+                    if globalSearch_flag == False and lineNumber == "":
+                        try:
+                            newline = re.sub(r''+oldString, newString, self.FILE_INFO.lines[i], count=1)
+                        except:
+                            return _invalid("can\'t replace \'" + oldString + "\' with \'" + newString + "\' in "\
+                                     + SCRIPT + " for replacing method")
+
+                    # Part3-1: replace all match each line
+                    elif globalSearch_flag == True:
+                        try:
+                            newline = re.sub(r''+oldString, newString, self.FILE_INFO.lines[i])
+                        except:
+                            return _invalid("can\'t replace \'" + oldString + "\' with \'" + newString + "\' in "\
+                                    + SCRIPT + " for replacing method")
+                    else:
+                        return _invalid("invalid " + SCRIPT + " for replacing method")
+
+                    self.FILE_INFO.lines[i] = newline
+            else :
+                # Part3-2: replace all in lineNumber 
+                try:
+                    newline = re.sub(r''+oldString, newString, self.FILE_INFO.lines[lineNumber-1])
+                    self.FILE_INFO.lines[lineNumber-1] =  newline
+                except:
+                    return _invalid("can\'t replace \'" + oldString + "\' with \'" + newString + "\' in "\
+                                    + SCRIPT + " for replacing method")
+        return
+
+    
+if __name__ == "__main__":
+    nargv = len(sys.argv)
+    
+    no_pipe_status = sys.stdin.isatty()
+    if (no_pipe_status == True):
+        
+        if nargv == 4:
+            first_Str   = sys.argv[1]
+            second_Str  = sys.argv[2]
+            third_Str   = sys.argv[3]
+        
+            CSED(first_Str, second_Str, third_Str)
+            
+
+        elif  nargv == 3:
+            first_Str   = sys.argv[1]
+            second_Str  = sys.argv[2]
+            third_Str   = None
+        
+            CSED(first_Str, second_Str, third_Str)
+
+        else:
+             _invalid("invalid Syntax \nusage: csed " + OPTIONS + " " + SCRIPT + " " + INPUTFILE)
+
+    else:
+        
+        if nargv == 4:
+            first_Str   = sys.argv[1]
+            second_Str  = sys.argv[2]
+            third_Str   = sys.argv[3]
+            pipeInput   = sys.stdin.readlines()
+        
+            CSED(first_Str, second_Str, third_Str, pipe_input=pipeInput)
+
+        elif nargv == 3:
+            first_Str   = sys.argv[1]
+            second_Str  = sys.argv[2]
+            third_Str   = None
+            pipeInput   = sys.stdin.readlines()
+        
+            CSED(first_Str, second_Str, third_Str, pipe_input=pipeInput)
+
+
+        elif nargv == 2:
+            first_Str   = sys.argv[1]
+            second_Str  = None
+            third_Str   = None
+            pipeInput   = sys.stdin.readlines()
+        
+            CSED(first_Str, second_Str, third_Str, pipe_input=pipeInput)
+
+        else:
+             _invalid("invalid Syntax \nusage: csed " + OPTIONS + " " + SCRIPT + " " + INPUTFILE)
+
